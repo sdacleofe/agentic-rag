@@ -1,0 +1,52 @@
+# docker-compose.dev.yml — GPU laptop overrides
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Prerequisites:
+#   1. NVIDIA driver installed (nvidia-smi works)
+#   2. NVIDIA Container Toolkit:
+#      https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+#      Quick install (Ubuntu/WSL2):
+#        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+#        curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+#        sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+#        sudo nvidia-ctk runtime configure --runtime=docker
+#        sudo systemctl restart docker
+
+version: '3.9'
+
+services:
+  ollama:
+    environment:
+      - OLLAMA_KEEP_ALIVE=1h
+      # Force full GPU offload — all layers to VGPU
+      - OLLAMA_NUM_GPU=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  api:
+    # Hot-reload for development
+    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - .env
+      - .env.dev
+    volumes:
+      - ./app:/workspace/app    # live code mount
+      - ./data:/data
+
+  ui:
+    env_file:
+      - .env
+      - .env.dev
+    volumes:
+      - ./app:/workspace/app    # live code mount
+      - ./data:/data
+
+  # Skip nginx in dev — access services directly on their ports
+  nginx:
+    profiles:
+      - prod

@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Agentic RAG with Gemma 4 on Azure VM &lpar;4 vCPU&comma; 16GB&rpar;</title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.css">
+<link href="https://cdn.jsdelivr.net/npm/katex-copytex@latest/dist/katex-copytex.min.css" rel="stylesheet" type="text/css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+        
+        </head>
+        <body class="vscode-body vscode-light">
+            <h1 id="agentic-rag-with-gemma-4-on-azure-vm-4-vcpu-16gb">Agentic RAG with Gemma 4 on Azure VM (4 vCPU, 16GB)</h1>
+<p><strong>TL;DR:</strong> Deploy a locally-served Gemma 4 E2B (5B params, Q4_K ~3.2GB) via Ollama on an Azure Linux VM. An Agentic RAG pipeline (LangGraph) handles PDF ingestion, hybrid retrieval, re-ranking, and multi-step reasoning. A Streamlit chat UI exposes it to users, backed by a FastAPI server handling both sync and async queries.</p>
+<hr>
+<h2 id="architecture-overview">Architecture Overview</h2>
+<pre><code>User (Browser)
+    │
+    ▼
+Nginx (port 80)
+    ├─► Streamlit UI (:8501) ── chat, upload, source citations
+    └─► FastAPI (:8000) ────── /query (sync) + /query/async + /documents/upload
+              │
+              ▼
+        LangGraph Agent
+         ├─ Query Router  (simple vs. complex)
+         ├─ Query Rewriter (reformulate for retrieval)
+         ├─ Hybrid Retriever (ChromaDB vector + BM25 keyword, top-20)
+         ├─ Re-ranker (bge-reranker-base, top-5)
+         ├─ Context Builder (prompt assembly + metadata)
+         └─ Gemma 4 E2B via Ollama (:11434)
+</code></pre>
+<hr>
+<h2 id="phase-1--azure-vm--environment-setup">Phase 1 — Azure VM &amp; Environment Setup</h2>
+<ol>
+<li>Provision <strong>Standard_D4s_v3</strong> (4 vCPU, 16GB, Ubuntu 22.04 LTS) — <code>$0.19/hr</code> in eastus</li>
+<li>Install Docker Engine + Docker Compose v2, Nginx</li>
+<li>Install Ollama and pull the model:<pre><code class="language-bash">curl -fsSL https://ollama.com/install.sh | sh
+ollama pull gemma4:e2b-q4_k
+</code></pre>
+</li>
+<li>Verify: <code>ollama run gemma4:e2b</code> produces tokens at ~2–4 tok/sec on 4 vCPU</li>
+</ol>
+<hr>
+<h2 id="phase-2--project-scaffold">Phase 2 — Project Scaffold</h2>
+<ol start="5">
+<li>Create workspace layout:<pre><code>app/
+app/rag/
+app/api/
+app/ui/
+data/chromadb/
+data/uploads/
+</code></pre>
+</li>
+<li><code>requirements.txt</code>:<pre><code>langgraph
+langchain-community
+chromadb
+sentence-transformers
+rank_bm25
+fastapi
+uvicorn
+streamlit
+pymupdf
+unstructured[pdf]
+ollama
+</code></pre>
+</li>
+<li><code>app/config.py</code> — all tunables (chunk size, top-k, model name, Ollama URL)</li>
+<li><code>docker-compose.yml</code> — services for <code>ollama</code>, <code>app</code>, <code>nginx</code> (<em>depends_on</em> ordering)</li>
+</ol>
+<hr>
+<h2 id="phase-3--pdf-ingestion-pipeline">Phase 3 — PDF Ingestion Pipeline</h2>
+<ol start="9">
+<li><code>app/ingest.py</code>: parse PDFs with PyMuPDF → <code>unstructured</code> for tables/headers</li>
+<li>Semantic chunking: 512 tokens, 50-token overlap, metadata <code>{filename, page, section, ingested_at}</code></li>
+<li>Embed chunks with <strong>bge-small-en-v1.5</strong> (33M params, CPU-fast, ~90MB) → persist to ChromaDB</li>
+<li>Build BM25 index (<code>rank_bm25</code>) alongside, pickle to disk for fast reload</li>
+<li>FastAPI <code>POST /documents/upload</code> endpoint triggers this pipeline</li>
+</ol>
+<hr>
+<h2 id="phase-4--langgraph-agentic-rag-graph">Phase 4 — LangGraph Agentic RAG Graph</h2>
+<ol start="14">
+<li>
+<p><code>app/rag/graph.py</code> — define <code>AgentState</code> TypedDict:</p>
+<pre><code class="language-python"><span class="hljs-keyword">class</span> <span class="hljs-title class_">AgentState</span>(<span class="hljs-title class_ inherited__">TypedDict</span>):
+    query: <span class="hljs-built_in">str</span>
+    rewritten_query: <span class="hljs-built_in">str</span>
+    candidates: <span class="hljs-built_in">list</span>
+    reranked_docs: <span class="hljs-built_in">list</span>
+    answer: <span class="hljs-built_in">str</span>
+    sources: <span class="hljs-built_in">list</span>
+    route: <span class="hljs-built_in">str</span>  <span class="hljs-comment"># &quot;simple&quot; | &quot;complex&quot;</span>
+</code></pre>
+</li>
+<li>
+<p><code>app/rag/nodes.py</code> — implement each node:</p>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>query_router</code></td>
+<td>Classify query as <code>simple</code> or <code>complex</code></td>
+</tr>
+<tr>
+<td><code>query_rewriter</code></td>
+<td>Prompt Gemma to generate 3 search phrasings</td>
+</tr>
+<tr>
+<td><code>retriever</code></td>
+<td>ChromaDB cosine top-20 + BM25 top-20 → RRF fusion → top-20</td>
+</tr>
+<tr>
+<td><code>reranker</code></td>
+<td>bge-reranker-base cross-encoder → top-5</td>
+</tr>
+<tr>
+<td><code>context_builder</code></td>
+<td>Assemble final prompt with chunks + metadata citations</td>
+</tr>
+<tr>
+<td><code>llm_node</code></td>
+<td>Call Ollama streaming API</td>
+</tr>
+<tr>
+<td><code>response_formatter</code></td>
+<td>Return structured <code>{answer, sources[]}</code></td>
+</tr>
+</tbody>
+</table>
+</li>
+<li>
+<p>Graph edges: <code>simple</code> route skips rewriter; <code>complex</code> loops through sub-query decomposition up to 3 hops</p>
+</li>
+</ol>
+<hr>
+<h2 id="phase-5--fastapi-backend">Phase 5 — FastAPI Backend</h2>
+<ol start="17">
+<li>
+<p><code>app/api/main.py</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/query</code></td>
+<td><code>POST</code></td>
+<td>Sync query, simple path, max 30s timeout</td>
+</tr>
+<tr>
+<td><code>/query/async</code></td>
+<td><code>POST</code></td>
+<td>Submit to asyncio Queue, returns <code>{task_id}</code></td>
+</tr>
+<tr>
+<td><code>/query/status/{task_id}</code></td>
+<td><code>GET</code></td>
+<td>Polling endpoint for async results</td>
+</tr>
+<tr>
+<td><code>/documents/upload</code></td>
+<td><code>POST</code></td>
+<td>Multipart PDF upload + ingestion trigger</td>
+</tr>
+<tr>
+<td><code>/documents/list</code></td>
+<td><code>GET</code></td>
+<td>List ingested docs from ChromaDB metadata</td>
+</tr>
+</tbody>
+</table>
+</li>
+</ol>
+<hr>
+<h2 id="phase-6--streamlit-chat-ui">Phase 6 — Streamlit Chat UI</h2>
+<ol start="18">
+<li><code>app/ui/app.py</code>:
+<ul>
+<li>Chat history with <code>st.session_state</code></li>
+<li>Sidebar: document uploader + list of ingested files</li>
+<li>Simple queries: stream response from <code>/query</code></li>
+<li>Complex queries: submit → poll <code>/query/status/{id}</code> with progress spinner</li>
+<li>Source citations displayed below each answer (filename, page)</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h2 id="phase-7--deployment--hardening">Phase 7 — Deployment &amp; Hardening</h2>
+<ol start="19">
+<li><code>Dockerfile</code> (multi-stage): install deps, copy app, expose ports 8000 + 8501</li>
+<li><code>docker-compose.yml</code>: Ollama container with <code>--num-threads 4</code>, app container with env vars</li>
+<li><code>nginx.conf</code>: <code>location /</code> → Streamlit; <code>location /api</code> → FastAPI; timeouts set to 120s</li>
+<li>Azure NSG: allow inbound TCP 80, 443, SSH 22; block all else</li>
+<li>Systemd unit for Docker Compose auto-restart on reboot</li>
+</ol>
+<hr>
+<h2 id="key-files">Key Files</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>docker-compose.yml</code></td>
+<td>Orchestrates Ollama + app + Nginx</td>
+</tr>
+<tr>
+<td><code>app/config.py</code></td>
+<td>Centralized config (chunk size, model, top-k)</td>
+</tr>
+<tr>
+<td><code>app/ingest.py</code></td>
+<td>PDF parsing → embed → ChromaDB</td>
+</tr>
+<tr>
+<td><code>app/rag/graph.py</code></td>
+<td>LangGraph state machine definition</td>
+</tr>
+<tr>
+<td><code>app/rag/nodes.py</code></td>
+<td>All 7 agent node implementations</td>
+</tr>
+<tr>
+<td><code>app/api/main.py</code></td>
+<td>FastAPI endpoints (sync + async query)</td>
+</tr>
+<tr>
+<td><code>app/ui/app.py</code></td>
+<td>Streamlit chat UI</td>
+</tr>
+<tr>
+<td><code>requirements.txt</code></td>
+<td>All Python deps</td>
+</tr>
+<tr>
+<td><code>nginx.conf</code></td>
+<td>Reverse proxy config</td>
+</tr>
+<tr>
+<td><code>Dockerfile</code></td>
+<td>Container build</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="verification-checklist">Verification Checklist</h2>
+<ul class="contains-task-list">
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"type="checkbox"> <code>ollama run gemma4:e2b</code> → tokens stream on terminal</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"type="checkbox"> Upload 3 internal PDFs via UI → ChromaDB collection count increases</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"type="checkbox"> Submit simple query → response returned in &lt;30s with page citations</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"type="checkbox"> Submit complex multi-doc query → task submits, polling shows progress, answer arrives async</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"type="checkbox"> <code>docker stats</code> shows total memory &lt;15GB under concurrent load</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"type="checkbox"> Nginx serves UI at <code>http://&lt;VM_IP&gt;</code> (no port number)</li>
+</ul>
+<hr>
+<h2 id="decisions--rationale">Decisions &amp; Rationale</h2>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Choice</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LLM</td>
+<td>Gemma 4 E2B Q4_K_M</td>
+<td>Model + KV cache fits in ~9GB, leaves ~7GB for stack</td>
+</tr>
+<tr>
+<td>Vector DB</td>
+<td>ChromaDB (embedded)</td>
+<td>No server container overhead vs. Qdrant/Weaviate</td>
+</tr>
+<tr>
+<td>Embeddings</td>
+<td>bge-small-en-v1.5</td>
+<td>Best speed/quality on CPU (~100ms/chunk, ~90MB)</td>
+</tr>
+<tr>
+<td>Orchestration</td>
+<td>LangGraph</td>
+<td>Lightweight, graph-based state machine, production-grade</td>
+</tr>
+<tr>
+<td>Async Queue</td>
+<td>asyncio-native</td>
+<td>No Redis dependency, stays within 16GB memory budget</td>
+</tr>
+<tr>
+<td>Data scope</td>
+<td>Internal PDFs only</td>
+<td>Can be extended to live feeds later</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="further-considerations">Further Considerations</h2>
+<ol>
+<li><strong>TLS/HTTPS</strong> — Add Let's Encrypt via Certbot before any production use (<code>certbot --nginx</code>)</li>
+<li><strong>Authentication</strong> — Add <code>streamlit-authenticator</code> or Nginx basic auth for multi-user access</li>
+<li><strong>GPU upgrade path</strong> — If 2–4 tok/sec is too slow, swap to <code>Standard_NC4as_T4_v3</code> (~$0.53/hr) and add <code>--n-gpu-layers 35</code> to Ollama; the rest of the stack is unchanged</li>
+</ol>
+
+            <script async src="https://cdn.jsdelivr.net/npm/katex-copytex@latest/dist/katex-copytex.min.js"></script>
+            
+        </body>
+        </html>

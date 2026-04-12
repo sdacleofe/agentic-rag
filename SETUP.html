@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Setup Guide &mdash; Business Insights Agentic RAG</title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.css">
+<link href="https://cdn.jsdelivr.net/npm/katex-copytex@latest/dist/katex-copytex.min.css" rel="stylesheet" type="text/css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+        
+        </head>
+        <body class="vscode-body vscode-light">
+            <h1 id="setup-guide--business-insights-agentic-rag">Setup Guide — Business Insights Agentic RAG</h1>
+<p>Two environments are covered:</p>
+<table>
+<thead>
+<tr>
+<th>Environment</th>
+<th>Hardware</th>
+<th>Model</th>
+<th>GPU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Dev (laptop)</strong></td>
+<td>i9 2.2GHz · 8GB RAM · 16GB VGPU</td>
+<td><code>gemma4:e4b</code> (8B)</td>
+<td>NVIDIA (full offload)</td>
+</tr>
+<tr>
+<td><strong>Production (Azure)</strong></td>
+<td>Standard_D4s_v3 · 4 vCPU · 16GB RAM</td>
+<td><code>gemma4:e2b</code> (5B)</td>
+<td>CPU only</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#1-prerequisites">Prerequisites</a></li>
+<li><a href="#2-clone--configure">Clone &amp; configure</a></li>
+<li><a href="#3-dev-setup-gpu-laptop">Dev setup (GPU laptop)</a></li>
+<li><a href="#4-production-setup-azure-vm">Production setup (Azure VM)</a></li>
+<li><a href="#5-first-use--ingest-documents--query">First use — ingest documents &amp; query</a></li>
+<li><a href="#6-service-urls">Service URLs</a></li>
+<li><a href="#7-day-to-day-commands">Day-to-day commands</a></li>
+<li><a href="#8-configuration-reference">Configuration reference</a></li>
+<li><a href="#9-hardening-for-production">Hardening for production</a></li>
+<li><a href="#10-troubleshooting">Troubleshooting</a></li>
+</ol>
+<hr>
+<h2 id="1-prerequisites">1. Prerequisites</h2>
+<h3 id="both-environments">Both environments</h3>
+<ul>
+<li><strong>Docker Desktop ≥ 25</strong> (Windows/Mac) or <strong>Docker Engine ≥ 25 + Docker Compose v2</strong> (Linux)</li>
+<li><strong>Git</strong></li>
+<li><strong><code>make</code></strong> — comes with Git for Windows (Git Bash) or WSL2; on Linux: <code>sudo apt install make</code></li>
+</ul>
+<h3 id="dev-laptop-only-gpu">Dev laptop only (GPU)</h3>
+<ul>
+<li>NVIDIA GPU driver installed — confirm with:<pre><code class="language-bash">nvidia-smi
+</code></pre>
+</li>
+<li><strong>NVIDIA Container Toolkit</strong> — required for Docker to access the GPU:<pre><code class="language-bash"><span class="hljs-comment"># Ubuntu / Debian / WSL2</span>
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+  | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+  | sudo <span class="hljs-built_in">tee</span> /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+sudo apt-get update &amp;&amp; sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+</code></pre>
+</li>
+<li>Confirm Docker can see the GPU:<pre><code class="language-bash">docker run --<span class="hljs-built_in">rm</span> --gpus all nvidia/cuda:12.3.0-base-ubuntu22.04 nvidia-smi
+</code></pre>
+</li>
+</ul>
+<blockquote>
+<p><strong>Windows note:</strong> Run all commands in <strong>WSL2</strong> (Ubuntu). Docker Desktop with WSL2 backend supports NVIDIA GPU passthrough automatically once the driver is installed on the Windows host — you do <strong>not</strong> need to separately install the driver inside WSL2.</p>
+</blockquote>
+<hr>
+<h2 id="2-clone--configure">2. Clone &amp; configure</h2>
+<pre><code class="language-bash">git <span class="hljs-built_in">clone</span> &lt;your-repo-url&gt; agentic-rag
+<span class="hljs-built_in">cd</span> agentic-rag
+</code></pre>
+<p>The repository already contains <code>.env</code> (production) and <code>.env.dev</code> (dev/GPU). Review and adjust if needed:</p>
+<pre><code class="language-bash"><span class="hljs-comment"># Production defaults (Azure CPU)</span>
+<span class="hljs-built_in">cat</span> .<span class="hljs-built_in">env</span>
+
+<span class="hljs-comment"># Dev defaults (GPU laptop — gemma4:e4b, 8192 ctx, 8 threads)</span>
+<span class="hljs-built_in">cat</span> .env.dev
+</code></pre>
+<p>No secrets are required — the stack is fully local/self-hosted.</p>
+<hr>
+<h2 id="3-dev-setup-gpu-laptop">3. Dev setup (GPU laptop)</h2>
+<h3 id="31--first-time-setup-one-command">3.1 — First-time setup (one command)</h3>
+<pre><code class="language-bash">make dev-setup
+</code></pre>
+<p>This will:</p>
+<ol>
+<li>Build the Python application Docker image</li>
+<li>Start the Ollama container with GPU passthrough</li>
+<li>Pull <code>gemma4:e4b</code> (~5.2GB download — runs once, cached in a Docker volume)</li>
+<li>Start the API, UI, and all services</li>
+</ol>
+<p>Expected output when complete:</p>
+<pre><code>Dev services started:
+  Streamlit UI  → http://localhost:8501
+  FastAPI docs  → http://localhost:8000/docs
+  Ollama API    → http://localhost:11434
+</code></pre>
+<h3 id="32--verify-gpu-is-being-used">3.2 — Verify GPU is being used</h3>
+<pre><code class="language-bash"><span class="hljs-comment"># In a second terminal, watch VGPU utilisation while sending a test query</span>
+watch -n1 nvidia-smi
+
+<span class="hljs-comment"># Send a test prompt to Ollama directly</span>
+curl http://localhost:11434/api/generate \
+  -d <span class="hljs-string">&#x27;{&quot;model&quot;:&quot;gemma4:e4b&quot;,&quot;prompt&quot;:&quot;What is GDP?&quot;,&quot;stream&quot;:false}&#x27;</span> \
+  | python3 -m json.tool | grep response
+</code></pre>
+<p>You should see ~30–50 tokens/sec and VGPU utilisation spike during generation.</p>
+<h3 id="33--memory-fit-your-hardware">3.3 — Memory fit (your hardware)</h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>VGPU</th>
+<th>RAM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gemma 4 E4B weights (Q4_K)</td>
+<td>~5.2 GB</td>
+<td>—</td>
+</tr>
+<tr>
+<td>KV cache @ 8192 ctx</td>
+<td>~2.0 GB</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Embedding model (bge-small-en-v1.5)</td>
+<td>—</td>
+<td>~90 MB</td>
+</tr>
+<tr>
+<td>Re-ranker (bge-reranker-base)</td>
+<td>—</td>
+<td>~350 MB</td>
+</tr>
+<tr>
+<td>ChromaDB + FastAPI + Streamlit</td>
+<td>—</td>
+<td>~500 MB</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>~7.2 GB / 16 GB</strong></td>
+<td><strong>~1 GB / 8 GB</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="34--live-code-reload">3.4 — Live code reload</h3>
+<p>The dev compose mounts <code>./app</code> into the container. Any change to Python files in <code>app/</code> is picked up immediately by the FastAPI <code>--reload</code> server. Streamlit also auto-reloads on file save.</p>
+<hr>
+<h2 id="4-production-setup-azure-vm">4. Production setup (Azure VM)</h2>
+<h3 id="41--provision-the-vm">4.1 — Provision the VM</h3>
+<p>In the Azure portal or CLI:</p>
+<pre><code class="language-bash">az vm create \
+  --resource-group myRG \
+  --name rag-prod \
+  --image Ubuntu2204 \
+  --size Standard_D4s_v3 \
+  --admin-username azureuser \
+  --generate-ssh-keys
+
+<span class="hljs-comment"># Open HTTP and HTTPS ports</span>
+az vm open-port --port 80 --resource-group myRG --name rag-prod
+az vm open-port --port 443 --resource-group myRG --name rag-prod
+</code></pre>
+<h3 id="42--install-docker-on-the-vm">4.2 — Install Docker on the VM</h3>
+<pre><code class="language-bash">ssh azureuser@&lt;VM_PUBLIC_IP&gt;
+
+<span class="hljs-comment"># Install Docker Engine</span>
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker <span class="hljs-variable">$USER</span>
+newgrp docker
+
+<span class="hljs-comment"># Install Docker Compose v2 plugin</span>
+sudo apt-get install -y docker-compose-plugin
+
+<span class="hljs-comment"># Verify</span>
+docker compose version
+</code></pre>
+<h3 id="43--clone-the-project">4.3 — Clone the project</h3>
+<pre><code class="language-bash">git <span class="hljs-built_in">clone</span> &lt;your-repo-url&gt; agentic-rag
+<span class="hljs-built_in">cd</span> agentic-rag
+
+<span class="hljs-comment"># Confirm .env has production values (CPU model, etc.)</span>
+<span class="hljs-built_in">cat</span> .<span class="hljs-built_in">env</span>
+</code></pre>
+<h3 id="44--first-time-setup-one-command">4.4 — First-time setup (one command)</h3>
+<pre><code class="language-bash">make setup
+</code></pre>
+<p>This will:</p>
+<ol>
+<li>Build the application image on the VM</li>
+<li>Pull <code>gemma4:e2b</code> (~3.2GB, CPU-optimised Q4_K)</li>
+<li>Start all 4 services: Ollama, API, UI, Nginx</li>
+</ol>
+<p>The UI will be available at <code>http://&lt;VM_PUBLIC_IP&gt;</code> once complete.</p>
+<h3 id="45--auto-restart-on-reboot">4.5 — Auto-restart on reboot</h3>
+<pre><code class="language-bash">sudo <span class="hljs-built_in">tee</span> /etc/systemd/system/rag.service &gt; /dev/null &lt;&lt;<span class="hljs-string">&#x27;EOF&#x27;</span>
+[Unit]
+Description=Agentic RAG Stack
+After=docker.service
+Requires=docker.service
+
+[Service]
+WorkingDirectory=/home/azureuser/agentic-rag
+ExecStart=/usr/bin/docker compose up
+ExecStop=/usr/bin/docker compose down
+Restart=on-failure
+User=azureuser
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl <span class="hljs-built_in">enable</span> rag
+</code></pre>
+<hr>
+<h2 id="5-first-use--ingest-documents--query">5. First use — ingest documents &amp; query</h2>
+<h3 id="via-the-streamlit-ui">Via the Streamlit UI</h3>
+<ol>
+<li>Open the UI (see <a href="#6-service-urls">Service URLs</a>)</li>
+<li>In the <strong>left sidebar</strong>, click <strong>Browse files</strong> and upload one or more PDFs</li>
+<li>Wait for the &quot;Ingested N chunks&quot; confirmation</li>
+<li>Type a question into the chat input — e.g. <em>&quot;What are the key revenue drivers mentioned in the Q3 report?&quot;</em></li>
+</ol>
+<h3 id="via-the-api-directly">Via the API directly</h3>
+<pre><code class="language-bash"><span class="hljs-comment"># Upload a PDF</span>
+curl -X POST http://localhost:8000/documents/upload \
+  -F <span class="hljs-string">&quot;file=@./my-report.pdf&quot;</span>
+
+<span class="hljs-comment"># Simple synchronous query</span>
+curl -X POST http://localhost:8000/query \
+  -H <span class="hljs-string">&quot;Content-Type: application/json&quot;</span> \
+  -d <span class="hljs-string">&#x27;{&quot;query&quot;: &quot;What is the cash flow outlook?&quot;}&#x27;</span>
+
+<span class="hljs-comment"># Complex async query</span>
+TASK=$(curl -s -X POST http://localhost:8000/query/async \
+  -H <span class="hljs-string">&quot;Content-Type: application/json&quot;</span> \
+  -d <span class="hljs-string">&#x27;{&quot;query&quot;: &quot;Compare revenue trends across all uploaded reports and identify risk factors&quot;}&#x27;</span> \
+  | python3 -c <span class="hljs-string">&quot;import sys,json; print(json.load(sys.stdin)[&#x27;task_id&#x27;])&quot;</span>)
+
+<span class="hljs-comment"># Poll for result</span>
+curl http://localhost:8000/query/status/<span class="hljs-variable">$TASK</span> | python3 -m json.tool
+
+<span class="hljs-comment"># List ingested documents</span>
+curl http://localhost:8000/documents/list | python3 -m json.tool
+</code></pre>
+<h3 id="interactive-api-docs">Interactive API docs</h3>
+<p>FastAPI auto-generates a Swagger UI at <code>http://localhost:8000/docs</code> — you can test all endpoints directly in the browser.</p>
+<hr>
+<h2 id="6-service-urls">6. Service URLs</h2>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Dev (laptop)</th>
+<th>Production (Azure)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Streamlit Chat UI</td>
+<td><a href="http://localhost:8501">http://localhost:8501</a></td>
+<td>http://&lt;VM_IP&gt;</td>
+</tr>
+<tr>
+<td>FastAPI (REST)</td>
+<td><a href="http://localhost:8000">http://localhost:8000</a></td>
+<td>http://&lt;VM_IP&gt;/api</td>
+</tr>
+<tr>
+<td>FastAPI Swagger docs</td>
+<td><a href="http://localhost:8000/docs">http://localhost:8000/docs</a></td>
+<td>— (not exposed in prod)</td>
+</tr>
+<tr>
+<td>Ollama</td>
+<td><a href="http://localhost:11434">http://localhost:11434</a></td>
+<td>internal only</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="7-day-to-day-commands">7. Day-to-day commands</h2>
+<pre><code class="language-bash"><span class="hljs-comment"># ── Dev (GPU laptop) ─────────────────────────────────────────────────────</span>
+make dev-start          <span class="hljs-comment"># start all services</span>
+make dev-stop           <span class="hljs-comment"># stop all services</span>
+make dev-logs           <span class="hljs-comment"># follow all logs</span>
+make dev-logs-api       <span class="hljs-comment"># follow API logs only</span>
+make dev-logs-ui        <span class="hljs-comment"># follow UI logs only</span>
+
+<span class="hljs-comment"># ── Production (Azure) ───────────────────────────────────────────────────</span>
+make start              <span class="hljs-comment"># start all services</span>
+make stop               <span class="hljs-comment"># stop all services</span>
+make restart            <span class="hljs-comment"># rolling restart</span>
+make logs               <span class="hljs-comment"># follow all logs</span>
+make logs-api           <span class="hljs-comment"># follow API logs only</span>
+
+<span class="hljs-comment"># ── Rebuild after code changes ───────────────────────────────────────────</span>
+make dev-build          <span class="hljs-comment"># rebuild image (dev)</span>
+make build              <span class="hljs-comment"># rebuild image (prod)</span>
+</code></pre>
+<hr>
+<h2 id="8-configuration-reference">8. Configuration reference</h2>
+<p>All settings are controlled via environment variables. Set them in <code>.env</code> (prod) or <code>.env.dev</code> (dev).</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default (prod)</th>
+<th>Default (dev)</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MODEL_NAME</code></td>
+<td><code>gemma4:e2b</code></td>
+<td><code>gemma4:e4b</code></td>
+<td>Ollama model tag</td>
+</tr>
+<tr>
+<td><code>OLLAMA_BASE_URL</code></td>
+<td><code>http://ollama:11434</code></td>
+<td><code>http://localhost:11434</code></td>
+<td>Ollama endpoint</td>
+</tr>
+<tr>
+<td><code>EMBEDDING_MODEL</code></td>
+<td><code>BAAI/bge-small-en-v1.5</code></td>
+<td>same</td>
+<td>HuggingFace embedding model</td>
+</tr>
+<tr>
+<td><code>RERANKER_MODEL</code></td>
+<td><code>BAAI/bge-reranker-base</code></td>
+<td>same</td>
+<td>HuggingFace cross-encoder</td>
+</tr>
+<tr>
+<td><code>CHUNK_SIZE</code></td>
+<td><code>400</code></td>
+<td>same</td>
+<td>Words per chunk (≈512 tokens)</td>
+</tr>
+<tr>
+<td><code>CHUNK_OVERLAP</code></td>
+<td><code>50</code></td>
+<td>same</td>
+<td>Overlap between chunks</td>
+</tr>
+<tr>
+<td><code>RETRIEVAL_TOP_K</code></td>
+<td><code>20</code></td>
+<td>same</td>
+<td>Candidates before re-ranking</td>
+</tr>
+<tr>
+<td><code>RERANK_TOP_K</code></td>
+<td><code>5</code></td>
+<td>same</td>
+<td>Chunks sent to LLM</td>
+</tr>
+<tr>
+<td><code>NUM_CTX</code></td>
+<td><code>4096</code></td>
+<td><code>8192</code></td>
+<td>Ollama context window size</td>
+</tr>
+<tr>
+<td><code>NUM_THREAD</code></td>
+<td><code>4</code></td>
+<td><code>8</code></td>
+<td>CPU threads for LLM</td>
+</tr>
+<tr>
+<td><code>NUM_PREDICT</code></td>
+<td><code>512</code></td>
+<td><code>1024</code></td>
+<td>Max output tokens</td>
+</tr>
+<tr>
+<td><code>TEMPERATURE</code></td>
+<td><code>0.1</code></td>
+<td><code>0.1</code></td>
+<td>Generation temperature</td>
+</tr>
+<tr>
+<td><code>CHROMA_PATH</code></td>
+<td><code>/data/chromadb</code></td>
+<td><code>./data/chromadb</code></td>
+<td>ChromaDB persistence path</td>
+</tr>
+<tr>
+<td><code>UPLOADS_PATH</code></td>
+<td><code>/data/uploads</code></td>
+<td><code>./data/uploads</code></td>
+<td>Uploaded PDF storage path</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="9-hardening-for-production">9. Hardening for production</h2>
+<h3 id="tls--https-strongly-recommended">TLS / HTTPS (strongly recommended)</h3>
+<pre><code class="language-bash"><span class="hljs-comment"># On the Azure VM</span>
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d yourdomain.com
+sudo systemctl reload nginx
+</code></pre>
+<h3 id="authentication">Authentication</h3>
+<p>The Streamlit UI has no built-in auth. Add Nginx basic auth as a quick guard:</p>
+<pre><code class="language-bash">sudo apt install -y apache2-utils
+sudo htpasswd -c /etc/nginx/.htpasswd youruser
+</code></pre>
+<p>Then add to the <code>location /</code> block in <code>nginx.conf</code>:</p>
+<pre><code class="language-nginx"><span class="hljs-attribute">auth_basic</span> <span class="hljs-string">&quot;Restricted&quot;</span>;
+<span class="hljs-attribute">auth_basic_user_file</span> /etc/nginx/.htpasswd;
+</code></pre>
+<h3 id="firewall-azure-nsg">Firewall (Azure NSG)</h3>
+<p>Ensure only these inbound ports are open:</p>
+<table>
+<thead>
+<tr>
+<th>Port</th>
+<th>Protocol</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>22</td>
+<td>TCP</td>
+<td>SSH (restrict to your IP)</td>
+</tr>
+<tr>
+<td>80</td>
+<td>TCP</td>
+<td>HTTP (redirect to HTTPS)</td>
+</tr>
+<tr>
+<td>443</td>
+<td>TCP</td>
+<td>HTTPS</td>
+</tr>
+</tbody>
+</table>
+<p>Ports 8000, 8501, and 11434 should <strong>not</strong> be open to the public internet.</p>
+<hr>
+<h2 id="10-troubleshooting">10. Troubleshooting</h2>
+<h3 id="nvidia-smi-works-but-docker-cant-see-the-gpu"><code>nvidia-smi</code> works but Docker can't see the GPU</h3>
+<pre><code class="language-bash"><span class="hljs-comment"># Re-run container toolkit config and restart Docker</span>
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+
+<span class="hljs-comment"># Confirm</span>
+docker run --<span class="hljs-built_in">rm</span> --gpus all nvidia/cuda:12.3.0-base-ubuntu22.04 nvidia-smi
+</code></pre>
+<h3 id="model-download-is-slow--fails">Model download is slow / fails</h3>
+<pre><code class="language-bash"><span class="hljs-comment"># Pull the model manually and check progress</span>
+docker <span class="hljs-built_in">exec</span> -it ollama ollama pull gemma4:e4b
+</code></pre>
+<h3 id="no-relevant-documents-found-on-every-query">&quot;No relevant documents found&quot; on every query</h3>
+<pre><code class="language-bash"><span class="hljs-comment"># Check collection size</span>
+curl http://localhost:8000/documents/list
+
+<span class="hljs-comment"># Check ChromaDB directly</span>
+docker <span class="hljs-built_in">exec</span> -it rag_api python3 -c \
+  <span class="hljs-string">&quot;from app.ingest import get_chroma_collection; c=get_chroma_collection(); print(c.count(), &#x27;chunks&#x27;)&quot;</span>
+</code></pre>
+<h3 id="api-times-out-on-complex-queries">API times out on complex queries</h3>
+<p>Increase <code>proxy_read_timeout</code> in <code>nginx.conf</code> (default 120s) and restart Nginx:</p>
+<pre><code class="language-bash">make restart
+</code></pre>
+<h3 id="out-of-memory-oom-on-laptop">Out of memory (OOM) on laptop</h3>
+<p>Reduce context window in <code>.env.dev</code>:</p>
+<pre><code>NUM_CTX=4096
+</code></pre>
+<p>Then <code>make dev-stop &amp;&amp; make dev-start</code>.</p>
+<h3 id="port-already-in-use">Port already in use</h3>
+<pre><code class="language-bash"><span class="hljs-comment"># Find and kill the conflicting process</span>
+sudo lsof -i :8501
+sudo <span class="hljs-built_in">kill</span> -9 &lt;PID&gt;
+</code></pre>
+
+            <script async src="https://cdn.jsdelivr.net/npm/katex-copytex@latest/dist/katex-copytex.min.js"></script>
+            
+        </body>
+        </html>
