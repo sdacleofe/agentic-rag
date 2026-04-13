@@ -20,6 +20,8 @@ RUN pip install --no-cache-dir \
     --index-url https://pypi.org/simple/ \
     --trusted-host pypi.org \
     --trusted-host files.pythonhosted.org \
+    --timeout 300 \
+    --retries 5 \
     -r requirements.txt
 
 COPY app/ ./app/
