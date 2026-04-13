@@ -15,13 +15,24 @@ RUN apt-get update \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
+RUN pip install --no-cache-dir --upgrade pip
+
+# Install heavy packages in separate layers so Docker can cache each one
+RUN pip install --no-cache-dir --prefer-binary --timeout 300 --retries 10 \
+    "sentence-transformers>=3.0.0"
+
+RUN pip install --no-cache-dir --prefer-binary --timeout 300 --retries 10 \
+    "chromadb>=0.5.0"
+
+RUN pip install --no-cache-dir --prefer-binary --timeout 300 --retries 10 \
+    "streamlit>=1.38.0"
+
+RUN pip install --no-cache-dir --prefer-binary --timeout 300 --retries 10 \
+    "langgraph>=0.2.0"
+
+# Install remaining packages (heavy ones above are already cached)
 COPY requirements.txt .
-RUN pip install --no-cache-dir \
-    --index-url https://pypi.org/simple/ \
-    --trusted-host pypi.org \
-    --trusted-host files.pythonhosted.org \
-    --timeout 300 \
-    --retries 5 \
+RUN pip install --no-cache-dir --prefer-binary --timeout 300 --retries 10 \
     -r requirements.txt
 
 COPY app/ ./app/
