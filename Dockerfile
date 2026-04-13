@@ -2,8 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /workspace
 
-# 🔥 Replace Debian mirror with direct CDN (no redirect)
-RUN sed -i 's|http://deb.debian.org|http://cdn-fastly.deb.debian.org|g' /etc/apt/sources.list
+# 🔥 Replace Debian mirror with direct CDN (covers legacy .list and DEB822 .sources)
+RUN find /etc/apt -name "*.list" -o -name "*.sources" | \
+    xargs sed -i 's|http://deb.debian.org|http://cdn-fastly.deb.debian.org|g' 2>/dev/null || true
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
