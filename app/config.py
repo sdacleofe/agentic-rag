@@ -2,7 +2,7 @@ import os
 
 # LLM
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-MODEL_NAME: str = os.getenv("MODEL_NAME", "gemma3:4b")
+MODEL_NAME: str = os.getenv("MODEL_NAME", "llama3.2")
 
 # Embedding & reranking
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
