@@ -23,7 +23,7 @@ st.set_page_config(
 )
 
 st.title("📊 Business & Economic Insights")
-st.caption("Powered by Gemma 4 · Agentic RAG · Internal Documents")
+st.caption("Powered by Gemma 3 · Agentic RAG · Internal Documents")
 
 # ---------------------------------------------------------------------------
 # Sidebar — document management
