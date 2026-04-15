@@ -49,8 +49,7 @@ services:
     environment:
       - API_BASE=http://api:8000
     depends_on:
-      api:
-        condition: service_healthy
+      - api
     restart: unless-stopped
 
   nginx:
@@ -61,10 +60,8 @@ services:
     ports:
       - "80:80"
     depends_on:
-      ui:
-        condition: service_started
-      api:
-        condition: service_healthy
+      - ui
+      - api
     restart: unless-stopped
 
 volumes:
