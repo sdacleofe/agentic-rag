@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   ollama:
     image: ollama/ollama:latest
@@ -11,6 +9,12 @@ services:
     restart: unless-stopped
     environment:
       - OLLAMA_KEEP_ALIVE=24h
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   api:
     build: .
@@ -27,8 +31,15 @@ services:
       - UPLOADS_PATH=/data/uploads
       - BM25_INDEX_PATH=/data/bm25_index.pkl
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   ui:
     build: .
@@ -45,7 +56,8 @@ services:
     environment:
       - API_BASE=http://api:8000
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
   nginx:
@@ -56,8 +68,10 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - ui
-      - api
+      ui:
+        condition: service_started
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

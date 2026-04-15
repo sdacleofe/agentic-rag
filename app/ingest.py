@@ -70,10 +70,53 @@ def chunk_text(text: str) -> list[str]:
 # Ingestion
 # ---------------------------------------------------------------------------
 
+def document_exists(filename: str) -> bool:
+    """Return True if this filename is already in the collection."""
+    collection = get_chroma_collection()
+    results = collection.get(where={"filename": filename}, limit=1, include=[])
+    return len(results["ids"]) > 0
+
+
+def delete_document(filename: str) -> dict:
+    """Remove all chunks for a given filename from ChromaDB and rebuild BM25."""
+    collection = get_chroma_collection()
+    results = collection.get(where={"filename": filename}, include=[])
+    ids = results["ids"]
+    if not ids:
+        return {"status": "not_found", "filename": filename}
+
+    collection.delete(ids=ids)
+    _rebuild_bm25_index()
+    return {"status": "deleted", "filename": filename, "chunks_removed": len(ids)}
+
+
+def _rebuild_bm25_index() -> None:
+    """Rebuild the BM25 index from whatever remains in ChromaDB."""
+    collection = get_chroma_collection()
+    result = collection.get(include=["documents"])
+    texts: list[str] = result["documents"]
+    ids: list[str] = result["ids"]
+
+    index_path = Path(BM25_INDEX_PATH)
+    if not texts:
+        if index_path.exists():
+            index_path.unlink()
+        return
+
+    corpus = [t.lower().split() for t in texts]
+    bm25 = BM25Okapi(corpus)
+    os.makedirs(index_path.parent, exist_ok=True)
+    with open(index_path, "wb") as f:
+        pickle.dump({"bm25": bm25, "corpus": corpus, "ids": ids}, f)
+
+
 def ingest_pdf(file_path: str, filename: Optional[str] = None) -> dict:
     """Parse a PDF, chunk, embed, and persist to ChromaDB + BM25 index."""
     if filename is None:
         filename = Path(file_path).name
+
+    if document_exists(filename):
+        return {"status": "duplicate", "filename": filename, "message": "Document already ingested."}
 
     doc = fitz.open(file_path)
     all_chunks: list[dict] = []
@@ -166,7 +209,7 @@ def load_bm25() -> tuple[Optional[BM25Okapi], list[str]]:
 # ---------------------------------------------------------------------------
 
 def list_documents() -> list[dict]:
-    """Return one entry per unique ingested filename."""
+    """Return one entry per unique ingested filename with chunk count."""
     collection = get_chroma_collection()
     result = collection.get(include=["metadatas"])
     seen: dict[str, dict] = {}
@@ -176,5 +219,7 @@ def list_documents() -> list[dict]:
             seen[fname] = {
                 "filename": fname,
                 "ingested_at": meta.get("ingested_at", ""),
+                "chunks": 0,
             }
+        seen[fname]["chunks"] += 1
     return list(seen.values())

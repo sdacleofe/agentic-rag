@@ -6,6 +6,7 @@ Nodes are composed into a LangGraph StateGraph in graph.py.
 """
 
 from typing import Optional
+import time
 
 import httpx
 from sentence_transformers import SentenceTransformer, CrossEncoder
@@ -60,13 +61,15 @@ def query_router(state: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def query_rewriter(state: dict) -> dict:
-    """Generate 3 alternative search phrasings via Gemma to improve recall."""
+    """Generate 3 alternative search phrasings via LLM to improve recall."""
     query: str = state["query"]
+    # Sanitize: wrap user input so it cannot break out of the instruction block
+    safe_query = query.replace("\n", " ").strip()[:500]
     prompt = (
         "Generate 3 concise and distinct search queries to retrieve relevant "
         "business and economic information for the following question.\n"
         "Rules: one query per line, no numbering, no explanation, no empty lines.\n\n"
-        f"Question: {query}\n\nQueries:"
+        f"Question: {safe_query}\n\nQueries:"
     )
     raw = _call_ollama(prompt, max_tokens=120)
     rewrites = [line.strip() for line in raw.strip().splitlines() if line.strip()][:3]
@@ -168,6 +171,8 @@ def reranker_node(state: dict) -> dict:
 def context_builder(state: dict) -> dict:
     """Assemble the final LLM prompt from top-ranked chunks."""
     query: str = state["query"]
+    # Sanitize user query to prevent prompt injection
+    safe_query = query.replace("\n", " ").strip()[:500]
     docs: list[dict] = state["reranked_docs"]
 
     if not docs:
@@ -176,7 +181,7 @@ def context_builder(state: dict) -> dict:
             "No relevant documents were found in the knowledge base for this question.\n"
             "Politely explain that you cannot answer without relevant source material "
             "and suggest the user uploads relevant documents.\n\n"
-            f"Question: {query}\n\nResponse:"
+            f"Question: {safe_query}\n\nResponse:"
         )
         return {**state, "prompt": prompt, "sources": []}
 
@@ -197,7 +202,8 @@ def context_builder(state: dict) -> dict:
         "Cite every claim using [N] notation matching the source headers above.\n"
         "If the context does not contain enough information, say so explicitly.\n\n"
         f"Context:\n{context}\n\n"
-        f"Question: {query}\n\n"
+        "--- END OF CONTEXT ---\n\n"
+        f"Question: {safe_query}\n\n"
         "Answer:"
     )
     return {**state, "prompt": prompt, "sources": sources}
@@ -226,7 +232,7 @@ def response_formatter(state: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _call_ollama(prompt: str, max_tokens: int = NUM_PREDICT) -> str:
-    """Blocking call to the Ollama /api/generate endpoint."""
+    """Blocking call to the Ollama /api/generate endpoint with retry logic."""
     payload = {
         "model": MODEL_NAME,
         "prompt": prompt,
@@ -238,7 +244,17 @@ def _call_ollama(prompt: str, max_tokens: int = NUM_PREDICT) -> str:
             "num_thread": NUM_THREAD,
         },
     }
-    with httpx.Client(timeout=180.0) as client:
-        resp = client.post(f"{OLLAMA_BASE_URL}/api/generate", json=payload)
-        resp.raise_for_status()
-    return resp.json().get("response", "")
+    last_exc: Exception = RuntimeError("Ollama call failed")
+    for attempt in range(3):
+        try:
+            with httpx.Client(timeout=180.0) as client:
+                resp = client.post(f"{OLLAMA_BASE_URL}/api/generate", json=payload)
+                resp.raise_for_status()
+            return resp.json().get("response", "")
+        except (httpx.TimeoutException, httpx.ConnectError) as exc:
+            last_exc = exc
+            time.sleep(2 ** attempt)  # 1s, 2s, 4s backoff
+        except httpx.HTTPStatusError as exc:
+            # 4xx errors won't be fixed by retrying
+            raise
+    raise last_exc

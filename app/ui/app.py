@@ -5,13 +5,37 @@ All API calls are server-side (httpx sync).
 The API_BASE env var points to the FastAPI service (Docker network or localhost).
 """
 
+import json
 import os
 import time
+from pathlib import Path
 
 import httpx
 import streamlit as st
 
 API_BASE: str = os.getenv("API_BASE", "http://localhost:8000")
+CHAT_HISTORY_FILE = Path("/data/chat_history.json")
+
+
+# ---------------------------------------------------------------------------
+# Chat persistence helpers
+# ---------------------------------------------------------------------------
+
+def _load_history() -> list:
+    try:
+        if CHAT_HISTORY_FILE.exists():
+            return json.loads(CHAT_HISTORY_FILE.read_text())
+    except Exception:
+        pass
+    return []
+
+
+def _save_history(messages: list) -> None:
+    try:
+        CHAT_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        CHAT_HISTORY_FILE.write_text(json.dumps(messages))
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -54,17 +78,32 @@ with st.sidebar:
         docs = httpx.get(f"{API_BASE}/documents/list", timeout=10.0).json()
         if docs:
             for d in docs:
-                st.markdown(f"- `{d['filename']}`")
+                col1, col2 = st.columns([4, 1])
+                col1.markdown(f"- `{d['filename']}` ({d.get('chunks', '?')} chunks)")
+                if col2.button("🗑️", key=f"del_{d['filename']}", help=f"Delete {d['filename']}"):
+                    try:
+                        r = httpx.delete(f"{API_BASE}/documents/{d['filename']}", timeout=30.0)
+                        r.raise_for_status()
+                        st.success(f"Deleted **{d['filename']}**")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Delete failed: {e}")
         else:
             st.caption("No documents uploaded yet.")
     except Exception:
         st.caption("⚠️ Could not reach API.")
 
+    st.divider()
+    if st.button("🗑️ Clear Chat History"):
+        st.session_state["messages"] = []
+        _save_history([])
+        st.rerun()
+
 # ---------------------------------------------------------------------------
 # Chat history
 # ---------------------------------------------------------------------------
 if "messages" not in st.session_state:
-    st.session_state["messages"] = []
+    st.session_state["messages"] = _load_history()
 
 for msg in st.session_state["messages"]:
     with st.chat_message(msg["role"]):
@@ -88,6 +127,7 @@ _COMPLEX_KEYWORDS = {
 
 if prompt := st.chat_input("Ask a business or economic question …"):
     st.session_state["messages"].append({"role": "user", "content": prompt})
+    _save_history(st.session_state["messages"])
     with st.chat_message("user"):
         st.markdown(prompt)
 
@@ -174,3 +214,4 @@ if prompt := st.chat_input("Ask a business or economic question …"):
     st.session_state["messages"].append(
         {"role": "assistant", "content": answer, "sources": sources}
     )
+    _save_history(st.session_state["messages"])

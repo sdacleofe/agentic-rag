@@ -29,6 +29,29 @@ from app.rag.nodes import (
     response_formatter,
     retriever,
 )
+from app.ingest import get_chroma_collection
+
+
+# ---------------------------------------------------------------------------
+# Early-exit check: skip entire pipeline if no documents are ingested
+# ---------------------------------------------------------------------------
+
+def _check_has_documents(state: AgentState) -> str:
+    """Return 'empty' if ChromaDB has no documents, else 'route'."""
+    collection = get_chroma_collection()
+    if collection.count() == 0:
+        return "empty"
+    return "route"
+
+
+def no_documents_node(state: AgentState) -> AgentState:
+    """Return an immediate answer when no documents are uploaded."""
+    return {**state,
+            "answer": (
+                "No documents have been uploaded to the knowledge base yet. "
+                "Please upload a PDF using the sidebar before asking questions."
+            ),
+            "sources": []}
 
 
 # ---------------------------------------------------------------------------
@@ -47,14 +70,6 @@ class AgentState(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# Conditional edge: route after query_router
-# ---------------------------------------------------------------------------
-
-def _route_query(state: AgentState) -> str:
-    return "rewrite" if state.get("route") == "complex" else "retrieve"
-
-
-# ---------------------------------------------------------------------------
 # Graph construction
 # ---------------------------------------------------------------------------
 
@@ -68,13 +83,21 @@ def build_graph():
     g.add_node("context_builder", context_builder)
     g.add_node("llm", llm_node)
     g.add_node("formatter", response_formatter)
+    g.add_node("no_documents", no_documents_node)
 
     g.set_entry_point("router")
 
+    # Single conditional edge: check docs + route complexity in one function
+    def _full_route(state: AgentState) -> str:
+        collection = get_chroma_collection()
+        if collection.count() == 0:
+            return "empty"
+        return "rewrite" if state.get("route") == "complex" else "retrieve"
+
     g.add_conditional_edges(
         "router",
-        _route_query,
-        {"rewrite": "rewriter", "retrieve": "retriever"},
+        _full_route,
+        {"empty": "no_documents", "rewrite": "rewriter", "retrieve": "retriever"},
     )
     g.add_edge("rewriter", "retriever")
     g.add_edge("retriever", "reranker")
@@ -82,6 +105,7 @@ def build_graph():
     g.add_edge("context_builder", "llm")
     g.add_edge("llm", "formatter")
     g.add_edge("formatter", END)
+    g.add_edge("no_documents", END)
 
     return g.compile()
 

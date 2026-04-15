@@ -5,13 +5,16 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+import httpx
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app.config import UPLOADS_PATH
-from app.ingest import ingest_pdf, list_documents
+from app.config import OLLAMA_BASE_URL, MODEL_NAME, UPLOADS_PATH
+from app.ingest import delete_document, ingest_pdf, list_documents
+from app.ingest import get_chroma_collection, get_embedder
 from app.rag.graph import run_query
+from app.rag.nodes import get_reranker
 
 app = FastAPI(title="Agentic RAG — Business Insights API")
 
@@ -21,6 +24,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Startup: validate config and warm up models
+# ---------------------------------------------------------------------------
+
+@app.on_event("startup")
+async def startup_event():
+    # Validate Ollama is reachable and model exists
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
+            resp.raise_for_status()
+            models = [m["name"] for m in resp.json().get("models", [])]
+            # Normalize: ollama list uses "name:tag" format
+            configured = MODEL_NAME if ":" in MODEL_NAME else f"{MODEL_NAME}:latest"
+            if configured not in models:
+                print(
+                    f"WARNING: Model '{MODEL_NAME}' not found in Ollama. "
+                    f"Available: {models}. Run: ollama pull {MODEL_NAME}"
+                )
+    except Exception as e:
+        print(f"WARNING: Could not reach Ollama at {OLLAMA_BASE_URL}: {e}")
+
+    # Warm up heavy models so first query isn't slow
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, get_chroma_collection)
+    await loop.run_in_executor(None, get_embedder)
+    await loop.run_in_executor(None, get_reranker)
+    print("Startup complete: models loaded.")
 
 # ---------------------------------------------------------------------------
 # In-memory task store (single-worker process — not shared across workers)
@@ -113,6 +146,8 @@ async def upload_document(file: UploadFile = File(...)):
 
     if result["status"] == "error":
         raise HTTPException(status_code=422, detail=result["message"])
+    if result["status"] == "duplicate":
+        raise HTTPException(status_code=409, detail=result["message"])
 
     return result
 
@@ -120,6 +155,19 @@ async def upload_document(file: UploadFile = File(...)):
 @app.get("/documents/list")
 def get_documents():
     return list_documents()
+
+
+@app.delete("/documents/{filename}")
+def remove_document(filename: str):
+    """Delete all chunks for a document from ChromaDB and BM25 index."""
+    result = delete_document(filename)
+    if result["status"] == "not_found":
+        raise HTTPException(status_code=404, detail=f"Document '{filename}' not found.")
+    # Remove file from uploads folder if it exists
+    file_path = Path(UPLOADS_PATH) / filename
+    if file_path.exists():
+        file_path.unlink()
+    return result
 
 
 # ---------------------------------------------------------------------------
